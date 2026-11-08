@@ -52,6 +52,7 @@ export const buildTimeline = (
     const chars = Array.from(sentence.text)
     // 文字(コードポイント)ごとの切った後の時刻
     const charCut = chars.map((_, k) => nearestCutTime(timing.charMs[k] ?? timing.startMs, segments))
+    // 文の終わりが切った所に落ちても、最後の文字より前にならないようにする
     const sentenceEnd = Math.max(nearestCutTime(timing.endMs, segments), charCut[charCut.length - 1] ?? 0)
     // UTF-16 の位置 → コードポイントの番号
     const cpIndexAt: number[] = []
@@ -94,7 +95,7 @@ export const buildTimeline = (
     }
     // 終わりは次の枚の頭。文の最後の枚は文の終わり
     for (let c = first; c < cues.length; c++) {
-      const end = c + 1 < cues.length && c + 1 > first ? cues[c + 1].startMs : sentenceEnd
+      const end = c + 1 < cues.length ? cues[c + 1].startMs : sentenceEnd
       cues[c].endMs = Math.max(cues[c].startMs, end)
     }
   })

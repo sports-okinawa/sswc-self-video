@@ -69,3 +69,64 @@ describe("buildTimeline", () => {
     expect(t.zoomAtMs).toEqual([2300])
   })
 })
+
+describe("buildTimeline (split cues, surrogate pairs, snapping)", () => {
+  const one = (text: string, role: SswcScene["role"] = "根拠") => {
+    const sc: SswcScene[] = [{ role, lines: [text] }]
+    const ss = sentencesOf(sc)
+    const al: ScriptAlignment = { sentences: [sent(0, ss[0].text, 1000)], missing: [], heard: [] }
+    return { ss, al, sc }
+  }
+  const whole: Segment[] = [{ srcStartMs: 0, srcEndMs: 20000 }]
+
+  it("keeps a keyword in the 2nd cue at the right offset", () => {
+    const { ss, al, sc } = one("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめも**重要語**です。")
+    const t = buildTimeline(ss, al, whole, sc)
+    expect(t.cues.length).toBeGreaterThan(1)
+    const hit = t.cues.filter((c) => c.emphasis.length > 0)
+    expect(hit.length).toBe(1)
+    expect(hit[0]).not.toBe(t.cues[0])
+    const e = hit[0].emphasis[0]
+    expect(hit[0].text.slice(e.start, e.end)).toBe("重要語")
+  })
+
+  it("never splits an emphasis across cues, or clips it consistently", () => {
+    const { ss, al, sc } = one("あいうえおかきくけこさしすせそたちつてとなにぬねのはひ**ふへほまみむめもやゆよ**らりるれろ。")
+    const t = buildTimeline(ss, al, whole, sc)
+    expect(t.cues.length).toBeGreaterThan(1)
+    const parts = t.cues.flatMap((c) => c.emphasis.map((e) => c.text.slice(e.start, e.end)))
+    // 分かれても、つなぐと強調の全文字になる(欠けも重複もない)
+    expect(parts.join("")).toBe("ふへほまみむめもやゆよ")
+    for (const c of t.cues) for (const e of c.emphasis) expect(e.end).toBeLessThanOrEqual(c.text.length)
+  })
+
+  it("handles surrogate pairs in emphasis and times", () => {
+    const { ss, al, sc } = one("💪**強い**筋肉と##3倍##です。")
+    const t = buildTimeline(ss, al, whole, sc)
+    const c = t.cues[0]
+    const kw = c.emphasis.find((e) => e.kind === "keyword")!
+    expect(c.text.slice(kw.start, kw.end)).toBe("強い")
+    const nm = c.emphasis.find((e) => e.kind === "number")!
+    expect(c.text.slice(nm.start, nm.end)).toBe("3倍")
+    // コードポイント: 💪0 強1 い2 筋3 肉4 と5 3(6) → 1000+600
+    expect(t.bigNumbers).toEqual([{ atMs: 1600, text: "3倍" }])
+    expect(t.zoomAtMs).toEqual([1100])
+  })
+
+  it("snaps chars in a cut region to the nearest kept time", () => {
+    const { ss, al, sc } = one("あいうえお。")
+    // 「う」(1200)と「え」(1300)が切った区間。残るのは 1000-1150 と 1350-2000
+    const segs: Segment[] = [
+      { srcStartMs: 1000, srcEndMs: 1150 },
+      { srcStartMs: 1350, srcEndMs: 2000 },
+    ]
+    const t = buildTimeline(ss, al, segs, sc)
+    expect(t.cues[0].startMs).toBe(0)
+    // 1200 は 1150 に近い → 150、1300 は 1350 に近い → 150
+    const sc2: SswcScene[] = [{ role: "根拠", lines: ["あい**うえ**お。"] }]
+    const ss2 = sentencesOf(sc2)
+    const t2 = buildTimeline(ss2, { sentences: [sent(0, ss2[0].text, 1000)], missing: [], heard: [] }, segs, sc2)
+    expect(t2.zoomAtMs).toEqual([150])
+    expect(t2.cues[0].endMs).toBeGreaterThanOrEqual(t2.cues[0].startMs)
+  })
+})
