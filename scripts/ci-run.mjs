@@ -12,7 +12,7 @@ import os from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 
-import { DriveAuthError, DriveRequestError, deleteFile, downloadFile, listFiles, trashFile, uploadFile } from "./lib/drive.mjs"
+import { DriveAuthError, DriveRequestError, canTrash, deleteFile, downloadFile, listFiles, trashFile, uploadFile } from "./lib/drive.mjs"
 
 const RETRIES = 3 // 最初の 1 回に加えて、失敗したら最大 3 回まで再送
 const RETRY_WAIT_MS = 2000
@@ -157,7 +157,7 @@ const defaultEdit = async (p) => (await import("./edit.mjs")).edit(p)
  */
 export async function runCi({ jobId, env, deps = {} }) {
   const fetchImpl = deps.fetchImpl ?? fetch
-  const drive = deps.drive ?? { listFiles, downloadFile, uploadFile, trashFile, deleteFile }
+  const drive = deps.drive ?? { listFiles, downloadFile, uploadFile, trashFile, deleteFile, canTrash }
   const editFn = deps.edit ?? defaultEdit
   const now = deps.now ?? (() => new Date())
   const appBaseUrl = env.APP_BASE_URL ?? ""
@@ -186,6 +186,19 @@ export async function runCi({ jobId, env, deps = {} }) {
   }
   step("notify running delivered")
 
+  // 生存の知らせ: webapp は 45 分 webhook が来ないと「応答なし」にするので、重い処理の区切りごとに running を送り直す。
+  // 届かなくても処理は止めない(最初の running だけ必須)
+  let beats = 0
+  const heartbeat = async () => {
+    beats++
+    try {
+      const ok = await notify({ status: "running" })
+      step(`heartbeat ${beats} ${ok ? "delivered" : "not delivered"}`)
+    } catch {
+      step(`heartbeat ${beats} failed`)
+    }
+  }
+
   const work = deps.workDir ?? fs.mkdtempSync(path.join(env.RUNNER_TEMP ?? os.tmpdir(), "sswc-self-video-"))
   const warnings = []
   const failed = (reasons) => finish({ status: "failed", reasons, warnings })
@@ -204,10 +217,11 @@ export async function runCi({ jobId, env, deps = {} }) {
       return await failed([isDriveError(e) && e.status === 404 ? SOURCE_NOT_FOUND_REASON : GENERIC_REASON])
     }
     step(`source downloaded ${Math.round(fs.statSync(videoPath).size / 1048576)}MB`)
+    await heartbeat()
 
     const editDir = path.join(work, "edit")
     fs.mkdirSync(editDir, { recursive: true })
-    const result = await editFn({ job, videoPath, workDir: editDir, assets })
+    const result = await editFn({ job, videoPath, workDir: editDir, assets, onProgress: heartbeat })
     warnings.push(...(result.warnings ?? []))
     if (result.status !== "done" || !result.finalPath || !result.coverPath) {
       step(`edit failed reasons ${result.reasons?.length ?? 0}`)
@@ -241,21 +255,26 @@ export async function runCi({ jobId, env, deps = {} }) {
     }
     step("upload done 2 files")
 
-    // 元動画をゴミ箱へ(持ち主がスタッフだと 403 → 警告。すでに無い 404 は警告なし)
+    // 元動画をゴミ箱へ移せるかを先に確かめる(持ち主がスタッフだと移せない → 警告。すでに無い 404 は警告なし)。
+    // 移すのは「完成」が届いてから(届かなかったときに元動画が残っていれば、もう一度押せる)
+    let trashable = false
     try {
-      await drive.trashFile(job.fileId)
-      step("source trashed")
+      trashable = await drive.canTrash(job.fileId)
+      if (!trashable) {
+        step("source not trashable")
+        warnings.push(SOURCE_TRASH_WARNING)
+      }
     } catch (e) {
       if (isDriveError(e) && e.status === 404) {
-        step("source trash 404")
+        step("source check 404")
       } else {
-        step(`source trash failed ${isDriveError(e) ? e.status : 0}`)
+        step(`source check failed ${isDriveError(e) ? e.status : 0}`)
         warnings.push(SOURCE_TRASH_WARNING)
       }
     }
 
     // 6. 結果
-    return await finish({
+    const outcome = await finish({
       status: "done",
       reasons: [],
       warnings,
@@ -264,6 +283,27 @@ export async function runCi({ jobId, env, deps = {} }) {
       coverUrl: `https://drive.google.com/file/d/${cover.id}/view`,
       durationSec: result.durationSec,
     })
+    if (!outcome.delivered) {
+      // 「完成」が届かなかった: 上げた完成品を消して(できる範囲で)、元動画は残す
+      for (const id of uploaded) {
+        try {
+          await drive.deleteFile(id)
+        } catch {
+          step("undelivered result cleanup failed")
+        }
+      }
+      return outcome
+    }
+    if (trashable) {
+      try {
+        await drive.trashFile(job.fileId)
+        step("source trashed")
+      } catch (e) {
+        // 通知は送り済みなので、ログにだけ残す
+        step(`source trash failed ${isDriveError(e) ? e.status : 0}`)
+      }
+    }
+    return outcome
   } catch (e) {
     if (isAuthError(e)) {
       step("drive auth expired")

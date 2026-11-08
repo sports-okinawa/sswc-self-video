@@ -47,7 +47,8 @@ const env = {
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
 
 /** fetch の差し替え: ジョブの取得と結果の通知を記録する */
-const makeFetch = ({ jobStatus = 200 } = {}) => {
+const events = []
+const makeFetch = ({ jobStatus = 200, postStatus = () => 200 } = {}) => {
   const posts = []
   const gets = []
   const fetchImpl = vi.fn(async (url, init = {}) => {
@@ -55,8 +56,11 @@ const makeFetch = ({ jobStatus = 200 } = {}) => {
       gets.push({ url: String(url), headers: init.headers })
       return jobStatus === 200 ? json(job) : json({ error: "x" }, jobStatus)
     }
-    posts.push({ url: String(url), headers: init.headers, body: init.body, payload: JSON.parse(init.body) })
-    return json({ ok: true })
+    const payload = JSON.parse(init.body)
+    posts.push({ url: String(url), headers: init.headers, body: init.body, payload })
+    const status = postStatus(payload, posts.length)
+    events.push(`notify ${payload.status} ${status}`)
+    return status === 200 ? json({ ok: true }) : json({ error: "x" }, status)
   })
   return { fetchImpl, posts, gets }
 }
@@ -83,16 +87,22 @@ const makeDrive = (over = {}) => {
     }),
     trashFile: vi.fn(async (id) => {
       calls.trashed.push(id)
+      events.push("trash")
     }),
+    canTrash: vi.fn(async () => true),
     deleteFile: vi.fn(async (id) => {
       calls.deleted.push(id)
+      events.push(`delete ${id}`)
     }),
     ...over,
   }
   return { drive, calls }
 }
 
-const doneEdit = vi.fn(async ({ workDir }) => {
+const doneEdit = vi.fn(async ({ workDir, onProgress }) => {
+  // 文字起こしの後と書き出しの後の知らせ
+  await onProgress?.()
+  await onProgress?.()
   const finalPath = path.join(workDir, "final.mp4")
   const coverPath = path.join(workDir, "cover.png")
   fs.writeFileSync(finalPath, "v")
@@ -104,6 +114,7 @@ let tmp
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ci-run-test-"))
   uploadSeq = 0
+  events.length = 0
 })
 afterEach(() => {
   vi.restoreAllMocks()
@@ -126,12 +137,13 @@ describe("runCi", () => {
     const ts = u.searchParams.get("ts")
     expect(gets[0].headers["X-Signature"]).toBe(sign(SECRET, `${JOB_ID}.${ts}`))
 
-    expect(posts.map((p) => p.payload.status)).toEqual(["running", "done"])
+    // 最初の running + 生存の知らせ 3 回(元動画の取得後・文字起こし後・書き出し後)→ done
+    expect(posts.map((p) => p.payload.status)).toEqual(["running", "running", "running", "running", "done"])
     for (const p of posts) {
       expect(p.url).toBe(`${APP}/api/webhooks/sswc-self-video`)
       expect(p.headers["X-Signature"]).toBe(`sha256=${crypto.createHmac("sha256", SECRET).update(p.body).digest("hex")}`)
     }
-    const done = posts[1].payload
+    const done = posts.at(-1).payload
     expect(done.jobId).toBe(JOB_ID)
     expect(done.resultFileId).toBe("UP-1")
     expect(done.videoUrl).toBe("https://drive.google.com/file/d/UP-1/view")
@@ -141,7 +153,7 @@ describe("runCi", () => {
 
     // ファイル名にタイトルを入れない
     expect(calls.uploads).toEqual([
-      { folderId: "DONE-FOLDER-ID", name: "20261108_ddee44.mp4".replace("ddee44", SCRIPT_ID.slice(-6)), mime: "video/mp4" },
+      { folderId: "DONE-FOLDER-ID", name: `20261108_${SCRIPT_ID.slice(-6)}.mp4`, mime: "video/mp4" },
       { folderId: "DONE-FOLDER-ID", name: `20261108_${SCRIPT_ID.slice(-6)}_cover.png`, mime: "image/png" },
     ])
     expect(calls.trashed).toEqual([SOURCE_ID])
@@ -164,29 +176,81 @@ describe("runCi", () => {
   })
 
   it("source trash 403 becomes warning", async () => {
+    // 持ち主がスタッフの動画は、ゴミ箱へ移そうとすると 403 になる(capabilities.canTrash が false)
     const { fetchImpl, posts } = makeFetch()
-    const { drive } = makeDrive({
-      trashFile: vi.fn(async () => {
-        throw new DriveRequestError("更新", 403, "insufficientFilePermissions")
-      }),
-    })
+    const { drive, calls } = makeDrive({ canTrash: vi.fn(async () => false) })
     const result = await run({ fetchImpl, drive, edit: doneEdit })
     const done = posts.at(-1).payload
     expect(done.status).toBe("done")
     expect(done.warnings).toEqual([SOURCE_TRASH_WARNING])
+    expect(calls.trashed).toEqual([])
     expect(SOURCE_TRASH_WARNING).toBe("元の動画を消せませんでした。ドライブの未編集フォルダから削除してください")
     expect(result.exitCode).toBe(0)
+  })
+
+  it("source permission check 403 also becomes warning", async () => {
+    const { fetchImpl, posts } = makeFetch()
+    const { drive, calls } = makeDrive({
+      canTrash: vi.fn(async () => {
+        throw new DriveRequestError("権限の確認", 403, "insufficientFilePermissions")
+      }),
+    })
+    await run({ fetchImpl, drive, edit: doneEdit })
+    expect(posts.at(-1).payload.warnings).toEqual([SOURCE_TRASH_WARNING])
+    expect(calls.trashed).toEqual([])
   })
 
   it("source trash 404 is silent", async () => {
     const { fetchImpl, posts } = makeFetch()
     const { drive } = makeDrive({
-      trashFile: vi.fn(async () => {
-        throw new DriveRequestError("更新", 404, "notFound")
+      canTrash: vi.fn(async () => {
+        throw new DriveRequestError("権限の確認", 404, "notFound")
       }),
     })
     await run({ fetchImpl, drive, edit: doneEdit })
     expect(posts.at(-1).payload.warnings).toEqual([])
+  })
+
+  it("trashes the source only after done is delivered", async () => {
+    const { fetchImpl } = makeFetch()
+    const { drive } = makeDrive()
+    await run({ fetchImpl, drive, edit: doneEdit })
+    expect(events.slice(-2)).toEqual(["notify done 200", "trash"])
+  })
+
+  it("keeps the source and removes the uploads when done cannot be delivered", async () => {
+    const { fetchImpl } = makeFetch({ postStatus: (p) => (p.status === "done" ? 400 : 200) })
+    const { drive, calls } = makeDrive()
+    const result = await run({ fetchImpl, drive, edit: doneEdit })
+    expect(calls.trashed).toEqual([])
+    expect(calls.deleted).toEqual(["UP-1", "UP-2"])
+    expect(events.slice(-3)).toEqual(["notify done 400", "delete UP-1", "delete UP-2"])
+    expect(result.delivered).toBe(false)
+    expect(result.exitCode).toBe(1)
+  })
+
+  it("does not stop when a heartbeat cannot be delivered (only the first running is required)", async () => {
+    // 2 回目以降の running は届かない(4xx は再送しない)
+    const { fetchImpl, posts } = makeFetch({ postStatus: (p, n) => (p.status === "running" && n > 1 ? 400 : 200) })
+    const { drive, calls } = makeDrive()
+    const result = await run({ fetchImpl, drive, edit: doneEdit })
+    expect(posts.filter((p) => p.payload.status === "running").length).toBeGreaterThanOrEqual(4)
+    expect(posts.at(-1).payload.status).toBe("done")
+    expect(calls.trashed).toEqual([SOURCE_ID])
+    expect(result.exitCode).toBe(0)
+  })
+
+  it("does not stop when a heartbeat throws", async () => {
+    let n = 0
+    const base = makeFetch()
+    const fetchImpl = vi.fn(async (url, init = {}) => {
+      if ((init.method ?? "GET") === "POST" && JSON.parse(init.body).status === "running" && ++n > 1) throw new Error("network")
+      return base.fetchImpl(url, init)
+    })
+    const { drive } = makeDrive()
+    const result = await run({ fetchImpl, drive, edit: doneEdit })
+    expect(result.exitCode).toBe(0)
+    expect(base.posts.at(-1).payload.status).toBe("done")
   })
 
   it("does not write to the done folder when edit fails, and forwards edit's reasons", async () => {
@@ -196,8 +260,8 @@ describe("runCi", () => {
     const result = await run({ fetchImpl, drive, edit })
     expect(calls.uploads).toEqual([])
     expect(calls.trashed).toEqual([])
-    expect(posts.map((p) => p.payload.status)).toEqual(["running", "failed"])
-    expect(posts[1].payload.reasons).toEqual(["横向きで撮影されています。縦向きで撮り直してください"])
+    expect(posts.map((p) => p.payload.status)).toEqual(["running", "running", "failed"])
+    expect(posts.at(-1).payload.reasons).toEqual(["横向きで撮影されています。縦向きで撮り直してください"])
     expect(result.exitCode).toBe(1)
   })
 
@@ -275,7 +339,7 @@ describe("runCi", () => {
       const { fetchImpl } = makeFetch()
       const over =
         scenario === "trash403"
-          ? { trashFile: vi.fn(async () => { throw new DriveRequestError("更新", 403, "x") }) }
+          ? { canTrash: vi.fn(async () => false) }
           : scenario === "quota"
             ? { uploadFile: vi.fn(async () => { throw new DriveRequestError("アップロード", 403, "storageQuotaExceeded") }) }
             : {}

@@ -16,7 +16,7 @@ import { promisify } from "node:util"
 
 import { alignScript } from "../src/lib/align.ts"
 import { buildTimeline } from "../src/lib/captions.ts"
-import { foundRatio as calcFoundRatio, planCuts, trimSilences } from "../src/lib/cutPlan.ts"
+import { MAX_GAP_MS, foundRatio as calcFoundRatio, planCuts, trimSilences } from "../src/lib/cutPlan.ts"
 import { sentencesOf } from "../src/lib/markup.ts"
 import { MIN_END_CARD_FRAMES, MIN_FINAL_MS, MIN_FOUND_RATIO, runQa } from "../src/lib/qa.ts"
 import { END_CARD_LINES, END_CARD_MS, FPS } from "../src/video/props.ts"
@@ -175,10 +175,18 @@ const defaultDeps = { normalizeVideo, transcribeWords, probeSource, probeOutput,
  * @param {{ job: object; videoPath: string; workDir: string; assets?: { bgm?: string|null; hit?: string|null; whoosh?: string|null }; deps?: object }} p
  * @returns {Promise<{ status: "done"|"failed"; reasons: string[]; warnings: string[]; finalPath?: string; coverPath?: string; durationSec?: number; foundRatio?: number }>}
  */
-export async function edit({ job, videoPath, workDir, assets = {}, deps = {} }) {
+export async function edit({ job, videoPath, workDir, assets = {}, deps = {}, onProgress }) {
   const d = { ...defaultDeps, ...deps }
-  process.env.WHISPER_MODEL ??= "medium"
-  process.env.WHISPER_MODEL_DIR ??= "whisper-models"
+  // whisper のモデルと置き場所(環境変数で上書きできる。process.env は書き換えない)
+  const whisper = { model: process.env.WHISPER_MODEL || "medium", modelDir: process.env.WHISPER_MODEL_DIR || "whisper-models" }
+  // 重い処理の区切りの知らせ(CI の生存通知)。失敗しても編集は止めない
+  const progress = async () => {
+    try {
+      await onProgress?.()
+    } catch {
+      step("progress notice failed")
+    }
+  }
   fs.mkdirSync(workDir, { recursive: true })
   const debugLog = path.join(workDir, "debug.log")
   const warnings = []
@@ -204,8 +212,9 @@ export async function edit({ job, videoPath, workDir, assets = {}, deps = {} }) 
     const sentences = sentencesOf(job.scenes ?? [])
     if (sentences.length === 0) return failed(["台本が空です。台本を確認してください"])
     const prompt = [job.title ?? "", ...sentences.map((s) => s.text)].join(" ").slice(0, PROMPT_MAX_CHARS)
-    const words = await d.transcribeWords(normalized, { prompt })
+    const words = await d.transcribeWords(normalized, { prompt, ...whisper })
     step(`transcribe done words ${words.length}`)
+    await progress()
 
     stage = "align"
     const alignment = alignScript(
@@ -223,7 +232,7 @@ export async function edit({ job, videoPath, workDir, assets = {}, deps = {} }) 
     const silences = await d.detectSilences(normalized, norm.durationMs)
     const planned = planCuts(alignment, norm.durationMs)
     const trimmed = trimSilences(planned, silences)
-    step(`silence trim long ${silences.filter((x) => x.endMs - x.startMs > 600).length} segments ${planned.length} to ${trimmed.length}`)
+    step(`silence trim long ${silences.filter((x) => x.endMs - x.startMs > MAX_GAP_MS).length} segments ${planned.length} to ${trimmed.length}`)
     const frames = snapSegments(trimmed)
     const segments = frames.map((f) => ({ srcStartMs: f.srcStartMs, srcEndMs: f.srcEndMs }))
     const timeline = buildTimeline(sentences, alignment, segments, job.scenes)
@@ -287,6 +296,7 @@ export async function edit({ job, videoPath, workDir, assets = {}, deps = {} }) 
       "render",
     )
     step("render done")
+    await progress()
     await (d.remotionWithRetry ?? remotionWithRetry)(["still", "src/index.ts", "SswcCover", coverPath, ...common], debugLog, "cover")
     step("cover done")
 

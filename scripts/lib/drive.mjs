@@ -156,6 +156,17 @@ export async function deleteFile(fileId) {
 }
 
 /**
+ * このアカウントでゴミ箱へ移せるか(sswc-self-video で追加)。持ち主が別の人なら false。
+ * 無い(404)などのエラーは DriveRequestError で投げる
+ */
+export async function canTrash(fileId) {
+  const res = await authedFetch(() => [`${FILES_URL}/${encodeURIComponent(fileId)}?supportsAllDrives=true&fields=capabilities(canTrash)`, {}])
+  if (!res.ok) throw await fail("権限の確認", res)
+  const body = await res.json()
+  return body?.capabilities?.canTrash === true
+}
+
+/**
  * ゴミ箱へ移す(sswc-self-video で追加。写し元には無い)。
  * 404 も含めてエラーは DriveRequestError で投げる(持ち主が別の人だと 403。どう扱うかは呼ぶ側が決める)
  */

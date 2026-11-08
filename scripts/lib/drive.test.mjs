@@ -5,7 +5,7 @@ import path from "node:path"
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { DriveAuthError, DriveRequestError, deleteFile, downloadFile, getAccessToken, listFiles, resetTokenCache, trashFile, uploadFile } from "./drive.mjs"
+import { DriveAuthError, DriveRequestError, deleteFile, downloadFile, getAccessToken, listFiles, resetTokenCache, canTrash, trashFile, uploadFile } from "./drive.mjs"
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } })
@@ -224,6 +224,21 @@ describe("trashFile", () => {
     await expect(trashFile("F1")).rejects.toMatchObject({ name: "DriveRequestError", status: 403, reason: "insufficientFilePermissions" })
     vi.stubGlobal("fetch", vi.fn(async (url) => (isToken(url) ? tokenReply() : new Response("x", { status: 404 }))))
     await expect(trashFile("F1")).rejects.toMatchObject({ status: 404 })
+  })
+})
+
+describe("canTrash", () => {
+  it("reads capabilities.canTrash", async () => {
+    const fetchMock = vi.fn(async (url) => (isToken(url) ? tokenReply() : json({ capabilities: { canTrash: false } })))
+    vi.stubGlobal("fetch", fetchMock)
+    expect(await canTrash("F1")).toBe(false)
+    expect(String(fetchMock.mock.calls[1][0])).toContain("fields=capabilities(canTrash)")
+    vi.stubGlobal("fetch", vi.fn(async (url) => (isToken(url) ? tokenReply() : json({ capabilities: { canTrash: true } }))))
+    expect(await canTrash("F1")).toBe(true)
+  })
+  it("throws DriveRequestError on 404", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url) => (isToken(url) ? tokenReply() : new Response("x", { status: 404 }))))
+    await expect(canTrash("F1")).rejects.toMatchObject({ name: "DriveRequestError", status: 404 })
   })
 })
 

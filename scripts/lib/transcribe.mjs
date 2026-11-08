@@ -139,7 +139,7 @@ export async function ensureWhisperModel(model, modelDir, deps = {}) {
     // 書き込みが追いつくまで最大 60 秒待つ
     for (let i = 0; i < 120 && sizeOf(file) !== expected; i++) await wait(500)
     if (sizeOf(file) === expected) return file
-    console.log(`whisper のモデル(${model})が途中で切れていました(${sizeOf(file)} / ${expected} byte)。取り直します(${attempt}/3)`)
+    console.log(`step: whisper model incomplete ${sizeOf(file)}/${expected} retry ${attempt}/3`)
   }
   fs.rmSync(file, { force: true })
   throw new Error(`whisper のモデル(${model})を正しく取得できませんでした`)
@@ -147,15 +147,16 @@ export async function ensureWhisperModel(model, modelDir, deps = {}) {
 
 /**
  * 正規化した動画の音声を文字起こしし、文字として完結した単位ごとの開始・終了時刻(ms)を返す
- * モデルは環境変数 WHISPER_MODEL(既定 small)。opts.prompt は文字起こしの手がかりにする言葉(台本・タイトルの言葉)。
+ * モデルは opts.model か環境変数 WHISPER_MODEL(既定 small)、置き場所は opts.modelDir か WHISPER_MODEL_DIR。opts.prompt は文字起こしの手がかりにする言葉(台本・タイトルの言葉)。
  * 指定のモデルで失敗したら small で、それでも失敗したら手がかりの言葉なしでやり直す(動画づくりを止めないため)
  * @param {string} normalizedVideo
  * @returns {Promise<Word[]>}
  */
 export async function transcribeWords(normalizedVideo, opts = {}) {
-  const model = process.env.WHISPER_MODEL ?? "small"
+  // opts.model / opts.modelDir があればそれを使う(sswc-self-video で追加。無ければ写し元どおり環境変数)
+  const model = opts.model ?? process.env.WHISPER_MODEL ?? "small"
   await installWhisperCpp({ to: WHISPER_DIR, version: WHISPER_VERSION, printOutput: false })
-  const modelDir = whisperModelDir()
+  const modelDir = opts.modelDir ? path.resolve(ROOT, opts.modelDir) : whisperModelDir()
   fs.mkdirSync(modelDir, { recursive: true })
 
   const attempts = [{ model, prompt: opts.prompt }]
@@ -174,11 +175,11 @@ export async function transcribeWords(normalizedVideo, opts = {}) {
           // small 以外は時間がかかるので、20 分で打ち切って small でやり直す(全体の制限は 90 分)
           timeoutMs: a.model === "small" ? undefined : 20 * 60 * 1000,
         })
-        if (i > 0) console.log(`文字起こしは ${a.model}${a.prompt ? "" : "(手がかりの言葉なし)"} でやり直して成功しました`)
+        if (i > 0) console.log(`step: transcribe fallback ok attempt ${i + 1}`)
         return wordsFromWhisperJson(fs.readFileSync(jsonPath))
       } catch (e) {
         lastError = e
-        console.log(`文字起こし(${a.model}${a.prompt ? "" : "・手がかりなし"})に失敗しました`)
+        console.log(`step: transcribe attempt ${i + 1} failed`)
       }
     }
     throw lastError
