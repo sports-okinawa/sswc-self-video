@@ -81,3 +81,22 @@ describe("edit", () => {
     expect(fs.readFileSync(path.join(tmp, "debug.log"), "utf8")).toContain("ffprobe")
   })
 })
+
+describe("parseSilences", () => {
+  it("reads silence_start / silence_end pairs in ms and closes a trailing open silence at the end", async () => {
+    const { parseSilences } = await import("./edit.mjs")
+    const stderr = [
+      "[silencedetect @ 0x1] silence_start: 0",
+      "[silencedetect @ 0x1] silence_end: 0.728687 | silence_duration: 0.728687",
+      "size=N/A time=00:00:10.00",
+      "[silencedetect @ 0x1] silence_start: 48.632542",
+      "[silencedetect @ 0x1] silence_end: 51.580062 | silence_duration: 2.94752",
+      "[silencedetect @ 0x1] silence_start: 86.9",
+    ].join("\n")
+    expect(parseSilences(stderr, 87489)).toEqual([
+      { startMs: 0, endMs: 729 },
+      { startMs: 48633, endMs: 51580 },
+      { startMs: 86900, endMs: 87489 },
+    ])
+  })
+})

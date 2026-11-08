@@ -55,3 +55,31 @@ export const toCutTime = (srcMs: number, segments: Segment[]): number | null => 
 // 台本の文のうち見つかった割合
 export const foundRatio = (alignment: ScriptAlignment, sentenceCount: number): number =>
   sentenceCount <= 0 ? 0 : (sentenceCount - alignment.missing.length) / sentenceCount
+
+export type Silence = { startMs: number; endMs: number }
+
+export const SILENCE_KEEP_MS = 150 // 長い無音を詰めたとき、無音の前後に残す長さ(合わせて約 300ms の間になる)
+export const MIN_SEGMENT_MS = 100 // これより短い区間は捨てる
+
+// 音から測った無音(silencedetect)で区間を詰める。文字起こしの時刻は無音の上にも伸びるので、
+// MAX_GAP_MS を超える無音は、前後に keepMs ずつ残して中を切る(区間の端にかかる無音は、その端を keepMs まで詰める)
+export const trimSilences = (segments: Segment[], silences: Silence[], keepMs = SILENCE_KEEP_MS): Segment[] => {
+  const cuts = silences
+    .filter((s) => s.endMs - s.startMs > MAX_GAP_MS)
+    .map((s) => ({ from: s.startMs + keepMs, to: s.endMs - keepMs }))
+    .filter((c) => c.to > c.from)
+  let result = segments.map((s) => ({ ...s }))
+  for (const c of cuts) {
+    const next: Segment[] = []
+    for (const seg of result) {
+      if (c.to <= seg.srcStartMs || c.from >= seg.srcEndMs) {
+        next.push(seg)
+        continue
+      }
+      if (c.from > seg.srcStartMs) next.push({ srcStartMs: seg.srcStartMs, srcEndMs: c.from })
+      if (c.to < seg.srcEndMs) next.push({ srcStartMs: c.to, srcEndMs: seg.srcEndMs })
+    }
+    result = next
+  }
+  return result.filter((s) => s.srcEndMs - s.srcStartMs >= MIN_SEGMENT_MS)
+}

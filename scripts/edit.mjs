@@ -16,7 +16,7 @@ import { promisify } from "node:util"
 
 import { alignScript } from "../src/lib/align.ts"
 import { buildTimeline } from "../src/lib/captions.ts"
-import { foundRatio as calcFoundRatio, planCuts } from "../src/lib/cutPlan.ts"
+import { foundRatio as calcFoundRatio, planCuts, trimSilences } from "../src/lib/cutPlan.ts"
 import { sentencesOf } from "../src/lib/markup.ts"
 import { MIN_END_CARD_FRAMES, MIN_FINAL_MS, MIN_FOUND_RATIO, runQa } from "../src/lib/qa.ts"
 import { END_CARD_LINES, END_CARD_MS, FPS } from "../src/video/props.ts"
@@ -34,6 +34,35 @@ const FADE_FRAMES = 2 // つなぎ目の音のフェード
 const PROMPT_MAX_CHARS = 120 // whisper の手がかりの言葉(長すぎると手がかりの文をそのまま書くことがある)
 
 const step = (msg) => console.log(`step: ${msg}`)
+
+const SILENCE_NOISE_DB = -35
+const SILENCE_MIN_SEC = 0.6
+
+/** silencedetect の出力から無音の区間(ms)を読む。最後まで続く無音は動画の終わりで閉じる */
+export const parseSilences = (stderr, durationMs = Infinity) => {
+  const out = []
+  let start = null
+  for (const m of stderr.matchAll(/silence_(start|end): (-?[\d.]+)/g)) {
+    const ms = Math.round(Number(m[2]) * 1000)
+    if (m[1] === "start") start = Math.max(0, ms)
+    else if (start !== null) {
+      out.push({ startMs: start, endMs: ms })
+      start = null
+    }
+  }
+  if (start !== null && Number.isFinite(durationMs) && durationMs > start) out.push({ startMs: start, endMs: durationMs })
+  return out
+}
+
+/** 正規化した音声の無音を測る(出力は表に出さない) */
+async function detectSilences(file, durationMs) {
+  const { stderr } = await run(
+    "ffmpeg",
+    ["-hide_banner", "-nostats", "-i", file, "-vn", "-af", `silencedetect=noise=${SILENCE_NOISE_DB}dB:d=${SILENCE_MIN_SEC}`, "-f", "null", "-"],
+    { maxBuffer: 64 * 1024 * 1024 },
+  )
+  return parseSilences(stderr, durationMs)
+}
 
 /** 区間をコマの境目にそろえる(映像はコマ単位でしか切れないので、音と映像の長さを一致させる) */
 export const snapSegments = (segments, fps = FPS) => {
@@ -140,7 +169,7 @@ async function normalizeWithRetry(input, output, normalize) {
   }
 }
 
-const defaultDeps = { normalizeVideo, transcribeWords, probeSource, probeOutput }
+const defaultDeps = { normalizeVideo, transcribeWords, probeSource, probeOutput, detectSilences }
 
 /**
  * @param {{ job: object; videoPath: string; workDir: string; assets?: { bgm?: string|null; hit?: string|null; whoosh?: string|null }; deps?: object }} p
@@ -189,7 +218,13 @@ export async function edit({ job, videoPath, workDir, assets = {}, deps = {} }) 
       warnings.push(`台本の文のうち${alignment.missing.length}文が読み取れなかったため、動画に入っていません`)
     }
 
-    const frames = snapSegments(planCuts(alignment, norm.durationMs))
+    // 文字起こしの時刻は無音の上にも伸びるので、音から測った 0.6 秒を超える無音も切る(字幕の時刻も詰めた後の区間で作る)
+    stage = "silence"
+    const silences = await d.detectSilences(normalized, norm.durationMs)
+    const planned = planCuts(alignment, norm.durationMs)
+    const trimmed = trimSilences(planned, silences)
+    step(`silence trim long ${silences.filter((x) => x.endMs - x.startMs > 600).length} segments ${planned.length} to ${trimmed.length}`)
+    const frames = snapSegments(trimmed)
     const segments = frames.map((f) => ({ srcStartMs: f.srcStartMs, srcEndMs: f.srcEndMs }))
     const timeline = buildTimeline(sentences, alignment, segments, job.scenes)
     step(`cut plan segments ${segments.length} ${Math.round(timeline.durationMs / 1000)}s`)

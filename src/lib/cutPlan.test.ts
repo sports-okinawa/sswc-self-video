@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { ScriptAlignment } from "./align.ts"
-import { foundRatio, planCuts, toCutTime } from "./cutPlan.ts"
+import { foundRatio, planCuts, toCutTime, trimSilences } from "./cutPlan.ts"
 
 const al = (spans: [number, number][], missing: number[] = [], heard: ScriptAlignment["heard"] = []): ScriptAlignment => ({
   sentences: spans.map(([startMs, endMs], index) => ({ index, startMs, endMs, charMs: [] })),
@@ -70,5 +70,49 @@ describe("foundRatio", () => {
   })
   it("0 sentences -> 0", () => {
     expect(foundRatio(al([]), 0)).toBe(0)
+  })
+})
+
+describe("trimSilences", () => {
+  it("splits a segment at a 2 s pause and keeps ~300 ms of silence", () => {
+    const segs = trimSilences([{ srcStartMs: 1000, srcEndMs: 10000 }], [{ startMs: 4000, endMs: 6000 }])
+    expect(segs).toEqual([
+      { srcStartMs: 1000, srcEndMs: 4150 },
+      { srcStartMs: 5850, srcEndMs: 10000 },
+    ])
+    const keptSilence = 4150 - 4000 + (6000 - 5850)
+    expect(keptSilence).toBe(300)
+  })
+
+  it("leaves silences of 0.6 s or less untouched", () => {
+    const segs = [{ srcStartMs: 1000, srcEndMs: 10000 }]
+    expect(trimSilences(segs, [{ startMs: 4000, endMs: 4500 }, { startMs: 5000, endMs: 5600 }])).toEqual(segs)
+  })
+
+  it("trims a silence at the segment start to keepMs", () => {
+    // 区間の頭 1000-2000 が無音 → 音の前 150ms だけ残す
+    expect(trimSilences([{ srcStartMs: 1000, srcEndMs: 5000 }], [{ startMs: 500, endMs: 2000 }])).toEqual([
+      { srcStartMs: 1850, srcEndMs: 5000 },
+    ])
+  })
+
+  it("trims a silence at the segment end and drops pieces shorter than 100 ms", () => {
+    expect(
+      trimSilences(
+        [
+          { srcStartMs: 1000, srcEndMs: 5000 },
+          { srcStartMs: 6000, srcEndMs: 7000 },
+          // 無音の中身を除くと 7750-7800 の 50ms しか残らない → 捨てる
+          { srcStartMs: 7700, srcEndMs: 7800 },
+        ],
+        [
+          { startMs: 4000, endMs: 5500 },
+          { startMs: 6060, endMs: 7900 },
+        ],
+      ),
+    ).toEqual([
+      { srcStartMs: 1000, srcEndMs: 4150 },
+      { srcStartMs: 6000, srcEndMs: 6210 },
+    ])
   })
 })
