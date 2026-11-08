@@ -21,9 +21,14 @@ describe("planCuts", () => {
     // 文 1 が 6000-8000 のとき
     const segs = planCuts(al([[1000, 3000], [6000, 8000]]), 20000)
     expect(segs).toEqual([{ srcStartMs: 880, srcEndMs: 3180 }, { srcStartMs: 5880, srcEndMs: 8180 }])
-    const t = toCutTime(6000, segs)!
-    expect(Math.abs(t - ((3180 - 880) + 200 + 120))).toBeLessThanOrEqual(20)
+    expect(toCutTime(6000, segs)).toBe(3180 - 880 + (6000 - 5880))
     expect(toCutTime(4000, segs)).toBeNull()
+  })
+
+  it("maps cut regions to null and the last end to total duration", () => {
+    const segs = planCuts(al([[1000, 3000], [6000, 8000]]), 20000)
+    expect(toCutTime(4000, segs)).toBeNull()
+    expect(toCutTime(8180, segs)).toBe(2300 + 2300)
   })
 
   it("clamps to the video range", () => {
