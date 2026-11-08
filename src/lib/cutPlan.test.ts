@@ -31,6 +31,25 @@ describe("planCuts", () => {
     expect(toCutTime(8180, segs)).toBe(2300 + 2300)
   })
 
+  const hs = (...r: [number, number][]): ScriptAlignment["heard"] => r.map(([startMs, endMs]) => ({ sentenceIndices: [], startMs, endMs, text: "あ", charMs: [startMs] }))
+
+  it("does not merge across a failed take", () => {
+    const segs = planCuts(al([[1000, 3000], [3900, 5500]], [], hs([3250, 3700])), 20000)
+    expect(segs).toHaveLength(2)
+    expect(segs.some((s) => s.srcStartMs < 3700 && s.srcEndMs > 3250)).toBe(false)
+  })
+
+  it("clips the lead pad after a failed take that ends just before", () => {
+    const segs = planCuts(al([[2050, 4000]], [], hs([1000, 2000])), 20000)
+    expect(segs[0].srcStartMs).toBeGreaterThanOrEqual(2000)
+    expect(segs[0].srcStartMs).toBeLessThanOrEqual(2050)
+  })
+
+  it("keeps only the final of three takes", () => {
+    const segs = planCuts(al([[3600, 5600]], [], hs([1000, 2000], [2300, 3300])), 20000)
+    expect(segs).toEqual([{ srcStartMs: 3480, srcEndMs: 5780 }])
+  })
+
   it("clamps to the video range", () => {
     expect(planCuts(al([[50, 1000]]), 1100)).toEqual([{ srcStartMs: 0, srcEndMs: 1100 }])
   })

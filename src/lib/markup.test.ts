@@ -33,4 +33,8 @@ describe("sentencesOf", () => {
     expect(r[1].marked.emphasis).toEqual([{ start: 3, end: 5, kind: "number" }])
     expect(r[2].marked.emphasis).toEqual([])
   })
+  it("閉じ括弧は前の文に付ける", () => {
+    const r = sentencesOf([{ role: "つかみ", lines: ["「行こう！」と言った。（本当）"] }])
+    expect(r.map((s) => s.text)).toEqual(["「行こう！」", "と言った。", "（本当）"])
+  })
 })

@@ -40,6 +40,7 @@ export const parseMarkup = (line: string): Marked => {
 }
 
 const TERMINATORS = new Set(["。", "!", "?", "！", "？"])
+const CLOSERS = new Set(["」", "』", "）", ")", "】", "\"", "”"])
 
 // 各 line を「。!?」で文に分ける(句点は前の文に残す)。印は分けた後の文に引き継ぐ
 export const sentencesOf = (scenes: SswcScene[]): { text: string; sceneIndex: number; marked: Marked }[] => {
@@ -66,7 +67,8 @@ export const sentencesOf = (scenes: SswcScene[]): { text: string; sceneIndex: nu
       for (let i = 0; i < chars.length; i++) {
         if (TERMINATORS.has(chars[i])) {
           // 連続する句点・記号は同じ文にまとめる
-          while (i + 1 < chars.length && TERMINATORS.has(chars[i + 1])) i++
+          // 句点のあとの閉じ括弧・引用符も前の文に付ける
+          while (i + 1 < chars.length && (TERMINATORS.has(chars[i + 1]) || CLOSERS.has(chars[i + 1]))) i++
           flush(i + 1)
         }
       }

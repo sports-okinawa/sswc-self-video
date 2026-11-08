@@ -13,18 +13,27 @@ export const MAX_GAP_MS = 600 // 余白をつけた区間どうしの隙間が�
 // 余白は常に前 120ms・後 180ms のままにして、語頭・語尾を守る。
 // (余白を削って 200ms に合わせると、語頭の余白が 20ms まで減るため採らない)。
 export const planCuts = (alignment: ScriptAlignment, videoDurationMs: number): Segment[] => {
+  const heard = alignment.heard
   const padded = alignment.sentences
-    .map((s) => ({
-      srcStartMs: Math.max(0, s.startMs - PAD_BEFORE_MS),
-      srcEndMs: Math.min(videoDurationMs, s.endMs + PAD_AFTER_MS),
-    }))
+    .map((s) => {
+      let start = Math.max(0, s.startMs - PAD_BEFORE_MS)
+      let end = Math.min(videoDurationMs, s.endMs + PAD_AFTER_MS)
+      // 余白は聞き取り区間(言い直す前のテイク・雑談)に食い込ませない。文そのものの [startMs, endMs] は削らない
+      for (const h of heard) {
+        if (h.startMs < s.startMs && h.endMs > start) start = Math.max(start, Math.min(h.endMs, s.startMs))
+        if (h.endMs > s.endMs && h.startMs < end) end = Math.min(end, Math.max(h.startMs, s.endMs))
+      }
+      return { srcStartMs: start, srcEndMs: end }
+    })
     .filter((s) => s.srcEndMs > s.srcStartMs)
     .sort((a, b) => a.srcStartMs - b.srcStartMs || a.srcEndMs - b.srcEndMs)
 
   const merged: Segment[] = []
   for (const seg of padded) {
     const last = merged[merged.length - 1]
-    if (last && seg.srcStartMs - last.srcEndMs <= MAX_GAP_MS) {
+    // 隙間に聞き取り区間があるときは、近くてもまとめない(前のテイクの声が残るため)
+    const heardInGap = !!last && heard.some((h) => h.startMs < seg.srcStartMs && h.endMs > last.srcEndMs)
+    if (last && seg.srcStartMs - last.srcEndMs <= MAX_GAP_MS && !heardInGap) {
       last.srcEndMs = Math.max(last.srcEndMs, seg.srcEndMs)
     } else {
       merged.push({ ...seg })
