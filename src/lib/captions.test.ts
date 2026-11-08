@@ -90,14 +90,20 @@ describe("buildTimeline (split cues, surrogate pairs, snapping)", () => {
     expect(hit[0].text.slice(e.start, e.end)).toBe("重要語")
   })
 
-  it("never splits an emphasis across cues, or clips it consistently", () => {
-    const { ss, al, sc } = one("あいうえおかきくけこさしすせそたちつてとなにぬねのはひ**ふへほまみむめもやゆよ**らりるれろ。")
+  it("clips an emphasis longer than one cue across cues", () => {
+    const kw = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほ"
+    const { ss, al, sc } = one("前置き**" + kw + "**後ろ。")
     const t = buildTimeline(ss, al, whole, sc)
     expect(t.cues.length).toBeGreaterThan(1)
-    const parts = t.cues.flatMap((c) => c.emphasis.map((e) => c.text.slice(e.start, e.end)))
-    // 分かれても、つなぐと強調の全文字になる(欠けも重複もない)
-    expect(parts.join("")).toBe("ふへほまみむめもやゆよ")
-    for (const c of t.cues) for (const e of c.emphasis) expect(e.end).toBeLessThanOrEqual(c.text.length)
+    const pieces: string[] = []
+    for (const c of t.cues)
+      for (const e of c.emphasis) {
+        expect(e.start).toBeGreaterThanOrEqual(0)
+        expect(e.end).toBeLessThanOrEqual(c.text.length)
+        pieces.push(c.text.slice(e.start, e.end))
+      }
+    expect(pieces.length).toBeGreaterThan(1)
+    expect(pieces.join("")).toBe(kw)
   })
 
   it("handles surrogate pairs in emphasis and times", () => {
@@ -114,19 +120,19 @@ describe("buildTimeline (split cues, surrogate pairs, snapping)", () => {
   })
 
   it("snaps chars in a cut region to the nearest kept time", () => {
-    const { ss, al, sc } = one("あいうえお。")
-    // 「う」(1200)と「え」(1300)が切った区間。残るのは 1000-1150 と 1350-2000
-    const segs: Segment[] = [
-      { srcStartMs: 1000, srcEndMs: 1150 },
-      { srcStartMs: 1350, srcEndMs: 2000 },
-    ]
+    // 残るのは 1500-2000 のみ。1500 より前に読む文字は 0、2000 より後は区間の長さ(500)に寄る
+    const segs: Segment[] = [{ srcStartMs: 1500, srcEndMs: 2000 }]
+    const sc: SswcScene[] = [{ role: "根拠", lines: ["あい##3倍##うえおかきくけこ。"] }]
+    const ss = sentencesOf(sc)
+    // 文は 1000 から 1 文字 100ms: 「3」= 1200(前の切った区間)、「こ」= 1900(区間内)
+    const al: ScriptAlignment = { sentences: [sent(0, ss[0].text, 1000)], missing: [], heard: [] }
     const t = buildTimeline(ss, al, segs, sc)
+    expect(t.bigNumbers).toEqual([{ atMs: 0, text: "3倍" }])
     expect(t.cues[0].startMs).toBe(0)
-    // 1200 は 1150 に近い → 150、1300 は 1350 に近い → 150
-    const sc2: SswcScene[] = [{ role: "根拠", lines: ["あい**うえ**お。"] }]
-    const ss2 = sentencesOf(sc2)
-    const t2 = buildTimeline(ss2, { sentences: [sent(0, ss2[0].text, 1000)], missing: [], heard: [] }, segs, sc2)
-    expect(t2.zoomAtMs).toEqual([150])
-    expect(t2.cues[0].endMs).toBeGreaterThanOrEqual(t2.cues[0].startMs)
+    // 後ろ: 文が 2100 から始まると全部 2000 より後 → 500(つなぎ目ではない)
+    const late: ScriptAlignment = { sentences: [sent(0, ss[0].text, 2100)], missing: [], heard: [] }
+    const t2 = buildTimeline(ss, late, segs, sc)
+    expect(t2.bigNumbers).toEqual([{ atMs: 500, text: "3倍" }])
+    expect(t2.zoomAtMs).toEqual([])
   })
 })
