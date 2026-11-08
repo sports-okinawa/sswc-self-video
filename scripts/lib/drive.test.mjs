@@ -153,8 +153,8 @@ describe("uploadFile", () => {
         return json({ id: "ID", webViewLink: "w" })
       }),
     )
-    await uploadFile("FOLDER", local, "a.mp4", "video/mp4", { athconPaperId: "p1", athconJobId: "j1" })
-    expect(JSON.parse(calls[0].body)).toEqual({ name: "a.mp4", parents: ["FOLDER"], appProperties: { athconPaperId: "p1", athconJobId: "j1" } })
+    await uploadFile("FOLDER", local, "a.mp4", "video/mp4", { scriptId: "p1", jobId: "j1" })
+    expect(JSON.parse(calls[0].body)).toEqual({ name: "a.mp4", parents: ["FOLDER"], appProperties: { scriptId: "p1", jobId: "j1" } })
   })
 
   it("fails clearly when the session has no Location", async () => {

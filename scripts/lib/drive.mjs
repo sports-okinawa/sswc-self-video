@@ -76,15 +76,14 @@ const authedFetch = async (makeRequest) => {
 
 /**
  * ドライブの API がエラーを返した。status は HTTP の状態、reason はドライブの理由(storageQuotaExceeded など。読めなければ空)。
- * 画面に出る文章に JSON の中身が混ざらないよう、message には本文を入れない(本文は body に持ち、ログにだけ出す)
+ * 画面に出る文章に JSON の中身が混ざらないよう、message には本文を入れない(本文はファイル ID などを含みうるので持たない)
  */
 export class DriveRequestError extends Error {
-  constructor(what, status, reason = "", body = "") {
+  constructor(what, status, reason = "") {
     super(`ドライブの${what}に失敗しました(HTTP ${status})`)
     this.name = "DriveRequestError"
     this.status = status
     this.reason = reason
-    this.body = body
   }
 }
 
@@ -97,7 +96,7 @@ const fail = async (what, res) => {
   } catch {
     // JSON でない本文(HTML など)
   }
-  return new DriveRequestError(what, res.status, typeof reason === "string" ? reason : "", text.slice(0, 300))
+  return new DriveRequestError(what, res.status, typeof reason === "string" ? reason : "")
 }
 
 export async function downloadFile(fileId, dest) {
