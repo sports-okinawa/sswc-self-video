@@ -1,0 +1,135 @@
+{
+  "video": "sample.mp4",
+  "title": "筋トレ前のストレッチ、実は逆効果？",
+  "citation": "Behm DG, et al. Acute effects of muscle stretching on physical performance, range of motion, and injury incidence. Appl Physiol Nutr Metab. 2016",
+  "endCard": [
+    "パワーラボ浦添 / 糸満パーク",
+    "初めての方は30日間無料",
+    "プロフィールのリンクから"
+  ],
+  "bgm": null,
+  "sfx": {
+    "hit": null,
+    "whoosh": null
+  },
+  "timeline": {
+    "cues": [
+      {
+        "startMs": 0,
+        "endMs": 2600,
+        "text": "筋トレ前に体を伸ばすと",
+        "emphasis": [
+          {
+            "start": 0,
+            "end": 4,
+            "kind": "keyword"
+          }
+        ]
+      },
+      {
+        "startMs": 2600,
+        "endMs": 5200,
+        "text": "力が出にくくなるって知ってた？",
+        "emphasis": [
+          {
+            "start": 0,
+            "end": 6,
+            "kind": "keyword"
+          }
+        ]
+      },
+      {
+        "startMs": 5200,
+        "endMs": 8500,
+        "text": "研究では、長く伸ばすと力が5%下がりました",
+        "emphasis": [
+          {
+            "start": 5,
+            "end": 10,
+            "kind": "keyword"
+          },
+          {
+            "start": 13,
+            "end": 15,
+            "kind": "number"
+          }
+        ]
+      },
+      {
+        "startMs": 8500,
+        "endMs": 11500,
+        "text": "おすすめは、動きながら温めること",
+        "emphasis": [
+          {
+            "start": 6,
+            "end": 11,
+            "kind": "keyword"
+          }
+        ]
+      },
+      {
+        "startMs": 11500,
+        "endMs": 15000,
+        "text": "腕を大きく10回まわしてから始めよう",
+        "emphasis": [
+          {
+            "start": 5,
+            "end": 8,
+            "kind": "number"
+          }
+        ]
+      },
+      {
+        "startMs": 15000,
+        "endMs": 20000,
+        "text": "今日のトレーニングで試してみて！",
+        "emphasis": []
+      }
+    ],
+    "bigNumbers": [
+      {
+        "atMs": 6800,
+        "text": "5%"
+      },
+      {
+        "atMs": 12600,
+        "text": "10回"
+      }
+    ],
+    "scenes": [
+      {
+        "sceneIndex": 0,
+        "role": "つかみ",
+        "startMs": 0
+      },
+      {
+        "sceneIndex": 1,
+        "role": "驚きの事実",
+        "startMs": 2600
+      },
+      {
+        "sceneIndex": 2,
+        "role": "根拠",
+        "startMs": 5200
+      },
+      {
+        "sceneIndex": 3,
+        "role": "明日からできること",
+        "startMs": 8500
+      },
+      {
+        "sceneIndex": 4,
+        "role": "締め",
+        "startMs": 15000
+      }
+    ],
+    "zoomAtMs": [
+      2600,
+      5800,
+      8500,
+      11500,
+      15000
+    ],
+    "durationMs": 20000
+  }
+}
