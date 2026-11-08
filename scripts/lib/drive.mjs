@@ -166,6 +166,14 @@ export async function canTrash(fileId) {
   return body?.capabilities?.canTrash === true
 }
 
+/** 親フォルダの ID 一覧(sswc-self-video で追加)。無い(404)などは DriveRequestError で投げる */
+export async function getParents(fileId) {
+  const res = await authedFetch(() => [`${FILES_URL}/${encodeURIComponent(fileId)}?supportsAllDrives=true&fields=parents`, {}])
+  if (!res.ok) throw await fail("親フォルダの確認", res)
+  const body = await res.json()
+  return Array.isArray(body?.parents) ? body.parents : []
+}
+
 /**
  * ゴミ箱へ移す(sswc-self-video で追加。写し元には無い)。
  * 404 も含めてエラーは DriveRequestError で投げる(持ち主が別の人だと 403。どう扱うかは呼ぶ側が決める)

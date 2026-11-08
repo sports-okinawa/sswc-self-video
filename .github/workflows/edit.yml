@@ -66,6 +66,8 @@ jobs:
           GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
           SSWC_SELF_DRIVE_DONE_FOLDER_ID: ${{ secrets.SSWC_SELF_DRIVE_DONE_FOLDER_ID }}
           SSWC_SELF_DRIVE_ASSETS_FOLDER_ID: ${{ secrets.SSWC_SELF_DRIVE_ASSETS_FOLDER_ID }}
+          # 任意: 設定すると「未編集」フォルダの動画だけ編集する
+          SSWC_SELF_DRIVE_INBOX_FOLDER_ID: ${{ secrets.SSWC_SELF_DRIVE_INBOX_FOLDER_ID }}
           SSWC_VIDEO_SECRET: ${{ secrets.SSWC_VIDEO_SECRET }}
           APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
           # whisper のモデルの置き場所(上の actions/cache と同じ)

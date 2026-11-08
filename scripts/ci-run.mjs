@@ -5,14 +5,14 @@
 // 台本・タイトル・ファイル ID・ファイル名・URL・エラーの本文(パスや ID を含みうる)は出さず、webhook の理由にも入れない。
 //
 // 入力(環境変数): JOB_ID
-// 秘密: APP_BASE_URL・SSWC_VIDEO_SECRET・SSWC_SELF_DRIVE_DONE_FOLDER_ID・SSWC_SELF_DRIVE_ASSETS_FOLDER_ID・GOOGLE_OAUTH_*(drive.mjs)
+// 秘密: APP_BASE_URL・SSWC_VIDEO_SECRET・SSWC_SELF_DRIVE_DONE_FOLDER_ID・SSWC_SELF_DRIVE_ASSETS_FOLDER_ID・SSWC_SELF_DRIVE_INBOX_FOLDER_ID(任意)・GOOGLE_OAUTH_*(drive.mjs)
 import crypto from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 
-import { DriveAuthError, DriveRequestError, canTrash, deleteFile, downloadFile, listFiles, trashFile, uploadFile } from "./lib/drive.mjs"
+import { DriveAuthError, DriveRequestError, canTrash, deleteFile, downloadFile, getParents, listFiles, trashFile, uploadFile } from "./lib/drive.mjs"
 
 const RETRIES = 3 // 最初の 1 回に加えて、失敗したら最大 3 回まで再送
 const RETRY_WAIT_MS = 2000
@@ -23,6 +23,7 @@ export const DRIVE_FULL_REASON = "ATHCON のドライブの空き容量が足り
 export const AUTH_REASON = new DriveAuthError().message
 export const SOURCE_NOT_FOUND_REASON = "元の動画が見つかりませんでした。ドライブの未編集フォルダに動画があるか確認して、選び直してください"
 export const UPLOAD_FAILED_REASON = "完成した動画をドライブに保存できませんでした。もう一度「動画を編集」を押してください"
+export const NOT_IN_INBOX_REASON = "未編集フォルダの動画ではありません"
 export const SOURCE_TRASH_WARNING = "元の動画を消せませんでした。ドライブの未編集フォルダから削除してください"
 export const ASSETS_MISSING_WARNING = "BGM/効果音がありません"
 
@@ -64,7 +65,15 @@ export async function postCallback({ appBaseUrl, secret, payload, fetchImpl = fe
     if (attempt > 0) await sleep(RETRY_WAIT_MS * attempt)
     try {
       const res = await fetchImpl(endpoint(appBaseUrl, "/api/webhooks/sswc-self-video"), { method: "POST", headers, body })
-      if (res.ok) return true
+      if (res.ok) {
+        // 200 でも「無視した」と返ってきたら届いていない(古いジョブなど)
+        const ack = await res.json().catch(() => null)
+        if (ack?.ignored === true) {
+          step("notify ignored")
+          return false
+        }
+        return true
+      }
       if (res.status < 500) {
         step(`notify rejected ${res.status}`)
         return false
@@ -157,7 +166,7 @@ const defaultEdit = async (p) => (await import("./edit.mjs")).edit(p)
  */
 export async function runCi({ jobId, env, deps = {} }) {
   const fetchImpl = deps.fetchImpl ?? fetch
-  const drive = deps.drive ?? { listFiles, downloadFile, uploadFile, trashFile, deleteFile, canTrash }
+  const drive = deps.drive ?? { listFiles, downloadFile, uploadFile, trashFile, deleteFile, canTrash, getParents }
   const editFn = deps.edit ?? defaultEdit
   const now = deps.now ?? (() => new Date())
   const appBaseUrl = env.APP_BASE_URL ?? ""
@@ -207,7 +216,20 @@ export async function runCi({ jobId, env, deps = {} }) {
     const { assets, warning } = await fetchAssets({ drive, folderId: env.SSWC_SELF_DRIVE_ASSETS_FOLDER_ID, jobId, dir: path.join(work, "assets") })
     if (warning) warnings.push(warning)
 
-    // 4. 元動画 → 編集
+    // 4. 元動画 → 編集(未編集フォルダの ID が設定されていれば、その中の動画だけ受け付ける)
+    if (env.SSWC_SELF_DRIVE_INBOX_FOLDER_ID) {
+      try {
+        const parents = await drive.getParents(job.fileId)
+        if (!parents.includes(env.SSWC_SELF_DRIVE_INBOX_FOLDER_ID)) {
+          step("source not in inbox")
+          return await failed([NOT_IN_INBOX_REASON])
+        }
+      } catch (e) {
+        if (isAuthError(e)) throw e
+        step(`source parent check failed ${isDriveError(e) ? e.status : 0}`)
+        return await failed([isDriveError(e) && e.status === 404 ? SOURCE_NOT_FOUND_REASON : GENERIC_REASON])
+      }
+    }
     const videoPath = path.join(work, "source-video")
     try {
       await drive.downloadFile(job.fileId, videoPath)

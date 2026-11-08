@@ -90,6 +90,7 @@ const makeDrive = (over = {}) => {
       events.push("trash")
     }),
     canTrash: vi.fn(async () => true),
+    getParents: vi.fn(async () => ["INBOX-FOLDER-ID"]),
     deleteFile: vi.fn(async (id) => {
       calls.deleted.push(id)
       events.push(`delete ${id}`)
@@ -227,6 +228,48 @@ describe("runCi", () => {
     expect(events.slice(-3)).toEqual(["notify done 400", "delete UP-1", "delete UP-2"])
     expect(result.delivered).toBe(false)
     expect(result.exitCode).toBe(1)
+  })
+
+  it("treats a 409 ignored reply to done as not delivered (no retry), keeping the source", async () => {
+    const { fetchImpl, posts } = makeFetch({ postStatus: (p) => (p.status === "done" ? 409 : 200) })
+    const { drive, calls } = makeDrive()
+    const result = await run({ fetchImpl, drive, edit: doneEdit })
+    expect(posts.filter((p) => p.payload.status === "done")).toHaveLength(1)
+    expect(calls.trashed).toEqual([])
+    expect(calls.deleted).toEqual(["UP-1", "UP-2"])
+    expect(result.delivered).toBe(false)
+  })
+
+  it("treats a 200 { ignored: true } reply as not delivered", async () => {
+    const { fetchImpl: base } = makeFetch()
+    const fetchImpl = vi.fn(async (url, init = {}) => ((init.method ?? "GET") === "POST" && JSON.parse(init.body).status === "done" ? json({ ignored: true }) : base(url, init)))
+    const { drive, calls } = makeDrive()
+    const result = await run({ fetchImpl, drive, edit: doneEdit })
+    expect(result.delivered).toBe(false)
+    expect(calls.deleted).toEqual(["UP-1", "UP-2"])
+    expect(calls.trashed).toEqual([])
+  })
+
+  it("fails with a fixed reason when the source is not in the inbox folder (only if the env is set)", async () => {
+    const { fetchImpl, posts } = makeFetch()
+    const { drive, calls } = makeDrive({ getParents: vi.fn(async () => ["OTHER"]) })
+    const edit = vi.fn()
+    const result = await runCi({ jobId: JOB_ID, env: { ...env, SSWC_SELF_DRIVE_INBOX_FOLDER_ID: "INBOX-FOLDER-ID" }, deps: { workDir: tmp, sleep: async () => {}, fetchImpl, drive, edit } })
+    expect(calls.downloads).not.toContain(SOURCE_ID)
+    expect(edit).not.toHaveBeenCalled()
+    expect(posts.at(-1).payload).toMatchObject({ status: "failed", reasons: ["未編集フォルダの動画ではありません"] })
+    expect(result.delivered).toBe(true)
+  })
+
+  it("proceeds when the source is in the inbox folder, and skips the check when the env is unset", async () => {
+    const a = makeFetch()
+    const da = makeDrive()
+    await runCi({ jobId: JOB_ID, env: { ...env, SSWC_SELF_DRIVE_INBOX_FOLDER_ID: "INBOX-FOLDER-ID" }, deps: { workDir: tmp, sleep: async () => {}, fetchImpl: a.fetchImpl, drive: da.drive, edit: doneEdit } })
+    expect(da.drive.getParents).toHaveBeenCalledWith(SOURCE_ID)
+    expect(a.posts.at(-1).payload.status).toBe("done")
+    const b = makeDrive()
+    await run({ fetchImpl: makeFetch().fetchImpl, drive: b.drive, edit: doneEdit })
+    expect(b.drive.getParents).not.toHaveBeenCalled()
   })
 
   it("does not stop when a heartbeat cannot be delivered (only the first running is required)", async () => {

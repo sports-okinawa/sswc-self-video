@@ -5,7 +5,7 @@ import path from "node:path"
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { DriveAuthError, DriveRequestError, deleteFile, downloadFile, getAccessToken, listFiles, resetTokenCache, canTrash, trashFile, uploadFile } from "./drive.mjs"
+import { DriveAuthError, DriveRequestError, deleteFile, downloadFile, getAccessToken, listFiles, resetTokenCache, canTrash, getParents, trashFile, uploadFile } from "./drive.mjs"
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } })
@@ -239,6 +239,19 @@ describe("canTrash", () => {
   it("throws DriveRequestError on 404", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url) => (isToken(url) ? tokenReply() : new Response("x", { status: 404 }))))
     await expect(canTrash("F1")).rejects.toMatchObject({ name: "DriveRequestError", status: 404 })
+  })
+})
+
+describe("getParents", () => {
+  it("returns parents and asks only for parents", async () => {
+    const fetchMock = vi.fn(async (url) => (isToken(url) ? tokenReply() : json({ parents: ["P1"] })))
+    vi.stubGlobal("fetch", fetchMock)
+    expect(await getParents("F1")).toEqual(["P1"])
+    expect(String(fetchMock.mock.calls[1][0])).toContain("fields=parents")
+  })
+  it("throws DriveRequestError on 404", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url) => (isToken(url) ? tokenReply() : new Response("x", { status: 404 }))))
+    await expect(getParents("F1")).rejects.toMatchObject({ name: "DriveRequestError", status: 404 })
   })
 })
 

@@ -78,7 +78,7 @@ PC のブラウザとスマホを使います。所要時間の目安は 60 分�
 
 1. ブラウザで `https://github.com/sports-okinawa/sswc-self-video` を開く →「Settings」→ 左側「Secrets and variables」→「Actions」→「New repository secret」。
    (このリポジトリは Claude が、あなたの承認をもらってから作成します。「作成しました」と連絡があってから進んでください。)
-2. 下の表の **名前** を一字一句そのまま、**値** を自分で貼り付けて「Add secret」。7 個すべて繰り返します。
+2. 下の表の **名前** を一字一句そのまま、**値** を自分で貼り付けて「Add secret」。7 個(未編集フォルダの ID は任意なので入れるなら 8 個)すべて繰り返します。
 
 | 名前(Name) | 入れる値 | 控えた場所・備考 |
 | --- | --- | --- |
@@ -87,6 +87,7 @@ PC のブラウザとスマホを使います。所要時間の目安は 60 分�
 | `GOOGLE_OAUTH_REFRESH_TOKEN` | 再発行用トークン | 同上(同じ値) |
 | `SSWC_SELF_DRIVE_DONE_FOLDER_ID` | 「完成」フォルダの ID | 手順 1 |
 | `SSWC_SELF_DRIVE_ASSETS_FOLDER_ID` | 「素材」フォルダの ID | 手順 1 |
+| `SSWC_SELF_DRIVE_INBOX_FOLDER_ID` | 「未編集」フォルダの ID(**任意**。入れると、このフォルダ以外の動画は編集しません) | 手順 1 |
 | `SSWC_VIDEO_SECRET` | 合言葉 | 手順 3(Vercel と同じ文字列) |
 | `APP_BASE_URL` | アプリの本番の URL(https:// から始まる、管理画面を開くときのアドレスの先頭部分。例: https://xxxx.example.com) | 末尾に `/` を付けない。**Claude が正しい値を伝えます** |
 
@@ -118,7 +119,7 @@ PC のブラウザとスマホを使います。所要時間の目安は 60 分�
 | GOOGLE_OAUTH_CLIENT_ID / CLIENT_SECRET / REFRESH_TOKEN | ○(既存と同じ値) | 既存のものを使う |
 | SSWC_SELF_DRIVE_DONE_FOLDER_ID(完成) | ○ | ○ |
 | SSWC_SELF_DRIVE_ASSETS_FOLDER_ID(素材) | ○ | |
-| SSWC_SELF_DRIVE_INBOX_FOLDER_ID(未編集) | | ○ |
+| SSWC_SELF_DRIVE_INBOX_FOLDER_ID(未編集) | 任意 | ○ |
 | SSWC_VIDEO_SECRET | ○ | ○(同じ文字列) |
 | APP_BASE_URL | ○ | |
 
