@@ -5,7 +5,7 @@ import path from "node:path"
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { DriveAuthError, DriveRequestError, deleteFile, downloadFile, getAccessToken, listFiles, resetTokenCache, uploadFile } from "./drive.mjs"
+import { DriveAuthError, DriveRequestError, deleteFile, downloadFile, getAccessToken, listFiles, resetTokenCache, trashFile, uploadFile } from "./drive.mjs"
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } })
@@ -205,6 +205,25 @@ describe("deleteFile", () => {
   it("throws on other errors", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url) => (isToken(url) ? tokenReply() : new Response("x", { status: 500 }))))
     await expect(deleteFile("F1")).rejects.toThrow(/削除.*500/)
+  })
+})
+
+// trashFile は sswc-self-video で足したもの(元動画をゴミ箱へ。持ち主がスタッフだと 403 になりうる)
+describe("trashFile", () => {
+  it("PATCHes trashed: true", async () => {
+    const fetchMock = vi.fn(async (url) => (isToken(url) ? tokenReply() : json({ id: "F1" })))
+    vi.stubGlobal("fetch", fetchMock)
+    await trashFile("F1")
+    const [url, init] = fetchMock.mock.calls[1]
+    expect(String(url)).toContain("/files/F1?")
+    expect(init.method).toBe("PATCH")
+    expect(JSON.parse(init.body)).toEqual({ trashed: true })
+  })
+  it("throws DriveRequestError with status on 403 and 404 (the caller decides)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url) => (isToken(url) ? tokenReply() : json({ error: { errors: [{ reason: "insufficientFilePermissions" }] } }, 403))))
+    await expect(trashFile("F1")).rejects.toMatchObject({ name: "DriveRequestError", status: 403, reason: "insufficientFilePermissions" })
+    vi.stubGlobal("fetch", vi.fn(async (url) => (isToken(url) ? tokenReply() : new Response("x", { status: 404 }))))
+    await expect(trashFile("F1")).rejects.toMatchObject({ status: 404 })
   })
 })
 

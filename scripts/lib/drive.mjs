@@ -155,6 +155,18 @@ export async function deleteFile(fileId) {
   throw await fail("削除", res)
 }
 
+/**
+ * ゴミ箱へ移す(sswc-self-video で追加。写し元には無い)。
+ * 404 も含めてエラーは DriveRequestError で投げる(持ち主が別の人だと 403。どう扱うかは呼ぶ側が決める)
+ */
+export async function trashFile(fileId) {
+  const res = await authedFetch(() => [
+    `${FILES_URL}/${encodeURIComponent(fileId)}?supportsAllDrives=true&fields=id`,
+    { method: "PATCH", headers: { "Content-Type": "application/json; charset=UTF-8" }, body: JSON.stringify({ trashed: true }) },
+  ])
+  if (!res.ok) throw await fail("ゴミ箱への移動", res)
+}
+
 /** query に合うファイルを全ページぶん集める。呼ぶ側が trashed=false を付ける。fields 例: "id,name,appProperties" */
 export async function listFiles(query, fields = "id,name") {
   const files = []
