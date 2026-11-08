@@ -1,0 +1,10 @@
+node_modules/
+out/
+work/
+.env
+.env.*
+whisper*
+*.mp4
+*.mov
+*.wav
+*.mp3
