@@ -11,7 +11,6 @@ export const MAX_GAP_MS = 600 // 余白をつけた区間どうしの隙間が�
 // (ffmpeg の trim+concat で単純に連結する。間を足さないので字幕の時刻と一致する)
 
 // 余白は常に前 120ms・後 180ms のままにして、語頭・語尾を守る。
-// つなぎの間は toCutTime が区間のあいだに KEPT_GAP_MS をはさむ形で表す
 // (余白を削って 200ms に合わせると、語頭の余白が 20ms まで減るため採らない)。
 export const planCuts = (alignment: ScriptAlignment, videoDurationMs: number): Segment[] => {
   const padded = alignment.sentences
