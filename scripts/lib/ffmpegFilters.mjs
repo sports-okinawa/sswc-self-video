@@ -7,6 +7,10 @@ export const fit =
   "scale=1080:1920:force_original_aspect_ratio=decrease," +
   "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=white,setsar=1,fps=30,format=yuv420p"
 
+// 本人撮影の映像の仕上げ(2026-11-11 ユーザー依頼「FFmpeg で質を上げて」・athcon-video-self-edit と同じ)。
+// スマホの細かいノイズを軽く減らし(hqdn3d)、輪郭を少しくっきりさせ(unsharp)、コントラストと色を少しだけ上げる(eq)
+export const selfEnhance = "hqdn3d=1.5:1.2:4:3,unsharp=5:5:0.55:5:5:0,eq=contrast=1.04:saturation=1.08:gamma=0.98"
+
 export const audio = "aresample=48000,aformat=channel_layouts=stereo"
 
 // 本人の声を聞き取りやすくする(2026-10-23 ユーザーの依頼「声をもう少しクリアに」)。
@@ -18,7 +22,7 @@ export const voiceClean =
   "acompressor=threshold=-20dB:ratio=3:attack=10:release=150:makeup=2"
 
 /** SNS 向けの音量の目安 */
-export const VOICE_TARGET_LUFS = -16
+export const VOICE_TARGET_LUFS = -14 // Instagram・TikTok の基準に合わせる(2026-11-11。以前は -16)
 
 /** 測った音量(LUFS)から、目標にそろえる一定の音量調整と、割れ防止のリミッター */
 export const voiceGain = (measuredLufs) => {

@@ -67,7 +67,7 @@ export const SswcSelfVideo = (props: SswcVideoProps) => {
       <Sequence from={0} durationInFrames={main} layout="none">
         <SceneSwipe startFrames={sceneStarts} />
         <BigNumber list={props.timeline.bigNumbers} fontFamily={display} />
-        <Captions cues={props.timeline.cues} fontFamily={body} />
+        <Captions cues={props.timeline.cues} fontFamily={display} />
         <CitationBar citation={props.citation} scenes={props.timeline.scenes} mainFrames={main} fontFamily={body} />
         <HookTitle title={props.title} fontFamily={display} whoosh={props.sfx.whoosh} />
         <ProgressBar totalFrames={main} />

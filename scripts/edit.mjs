@@ -291,7 +291,7 @@ export async function edit({ job, videoPath, workDir, assets = {}, deps = {}, on
     const coverPath = path.join(workDir, "cover.png")
     const common = [`--props=${propsFile}`, `--public-dir=${publicDir}`, "--log=error"]
     await (d.remotionWithRetry ?? remotionWithRetry)(
-      ["render", "src/index.ts", "SswcSelfVideo", finalPath, ...common, `--concurrency=${concurrency}`, "--codec=h264", "--audio-codec=aac"],
+      ["render", "src/index.ts", "SswcSelfVideo", finalPath, ...common, `--concurrency=${concurrency}`, "--codec=h264", "--audio-codec=aac", "--crf=16"],
       debugLog,
       "render",
     )

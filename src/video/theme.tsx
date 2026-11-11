@@ -5,6 +5,9 @@ export const NAVY = "#0a78b3"
 export const SKY = "#5ccdf5"
 export const ORANGE = "#ff8a1f"
 export const INK = "#000000"
+// 字幕の縁(2026-11-11 アスコンの自撮り動画とそろえて紺)と強調の黄色
+export const CAPTION_NAVY = "#0b2540"
+export const YELLOW = "#ffe600"
 
 /**
  * 白文字+黒の縁取り。-webkit-text-stroke は線の内側にも食い込むので、黒く縁取った写しの上に
@@ -16,7 +19,10 @@ export const Outlined = ({
   render,
   shadow = true,
   style,
+  color = INK,
 }: {
+  /** 縁の色(既定は黒) */
+  color?: string
   /** 文字の外に見える縁の太さ(px) */
   outline: number
   render: (stroke: boolean) => React.ReactNode
@@ -29,8 +35,8 @@ export const Outlined = ({
       style={{
         gridArea: "1 / 1",
         position: "relative",
-        color: INK,
-        WebkitTextStroke: `${outline * 2}px ${INK}`,
+        color,
+        WebkitTextStroke: `${outline * 2}px ${color}`,
         filter: shadow ? `drop-shadow(0 ${outline * 0.6}px ${outline * 0.5}px rgba(0,0,0,0.45))` : undefined,
       }}
     >

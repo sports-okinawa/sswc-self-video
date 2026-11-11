@@ -7,7 +7,7 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 
-import { audio, fit, voiceClean, voiceGain } from "./ffmpegFilters.mjs"
+import { audio, fit, selfEnhance, voiceClean, voiceGain } from "./ffmpegFilters.mjs"
 
 const run = promisify(execFile)
 
@@ -72,7 +72,7 @@ export async function normalizeVideo(input, output, deps = {}) {
     hdr,
     transfer: color.transfer,
     zscale: hdr ? await (deps.hasZscale ?? ffmpegHasZscale)() : false,
-  })
+  }, `${selfEnhance},${fit}`)
 
   const args = ["-y", "-loglevel", "error", "-i", input]
   if (!hasAudio) args.push("-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000")
