@@ -44,14 +44,14 @@ describe("runQa", () => {
     expect(runQa({ ...ok, srcDurationMs: 300000 })).toEqual([])
   })
 
-  it("reports final length outside 60 to 120 s with the seconds", () => {
-    expect(runQa({ ...ok, finalDurationMs: 45400 })).toEqual([
-      "完成の長さが45秒になりました。台本を最後まで読めているか確認してください",
+  it("reports final length outside 35 to 120 s with the seconds", () => {
+    expect(runQa({ ...ok, finalDurationMs: 34400 })).toEqual([
+      "完成の長さが34秒になりました。台本を最後まで読めているか確認してください",
     ])
     expect(runQa({ ...ok, finalDurationMs: 121000 })).toEqual([
       "完成の長さが121秒になりました。台本を最後まで読めているか確認してください",
     ])
-    expect(runQa({ ...ok, finalDurationMs: 60000 })).toEqual([])
+    expect(runQa({ ...ok, finalDurationMs: 35000 })).toEqual([])
     expect(runQa({ ...ok, finalDurationMs: 120000 })).toEqual([])
   })
 

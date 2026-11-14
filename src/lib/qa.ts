@@ -18,7 +18,7 @@ export type QaInput = {
 
 export const MIN_SRC_MS = 30_000
 export const MAX_SRC_MS = 300_000
-export const MIN_FINAL_MS = 60_000
+export const MIN_FINAL_MS = 35_000
 export const MAX_FINAL_MS = 120_000
 export const MIN_FOUND_RATIO = 0.8
 export const MIN_END_CARD_FRAMES = 150
